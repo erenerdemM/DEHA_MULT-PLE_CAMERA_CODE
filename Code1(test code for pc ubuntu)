@@ -1,0 +1,74 @@
+import os
+from subprocess import check_output
+from time import sleep
+import cv2
+import threading
+import datetime
+#from dronekit import LocationGlobal, connect, VehicleMode,LocationGlobalRelative, Command# Dronekitte kullanılacak komutların kütüphaneleri eklenir
+#arac = connect('127.0.0.1:14550',wait_ready=True)
+date = datetime.date.today()
+
+# linux için geçerli bir komuttur !!!
+# kodu çalıştırmadan önce "sudo apt install v4l2loopback-dkms" komutu çalıştırılıp kayıt yapılacak, kayıt yapıldıktan sonra yeniden başlatılıcak ve başlatılırken enroll sekmesine girilecek.
+# Bu işlem yapıldıktan sonra kod çalışabilir hale gelicek.
+# Sistem şifresi var ise kod çalışma sırasında bir (duruma göre iki) kere şifrenin girilmesini isteyebilir !!!
+# Dosya yollarına dikkat edilecek !!!
+# Kodda duruma göre komut değişikliği yapılacak !!! 
+# Raspberry Pi için komut değişikliği yapılacaktır !!! 
+
+def secondcam():
+    if os.path.exists("/home/eren/v4l2/v4l2loopback.ko"): # Dosya yolunda v4l2loopback.ko dosyası var ise indirme işlemi ve dosya oluşturma işlemi yapılmayıp direkt kod çalışmaktadır.
+    # dosya yolu değiştirilecektir
+        os.chdir("../")# python kodunun bulunduğu yerden çıkar (duruma göre bu komut tekrarlanabilir)
+        os.chdir("v4l2")
+        os.system("make clean")
+        os.system("sudo modprobe -r v4l2loopback")
+        os.system("make")
+        os.system("sudo modprobe v4l2loopback")
+        os.system("v4l2-ctl --list-devices")
+        os.chdir("Drone kayıtları")
+        t2.start()
+        os.system("ffmpeg -re -i /dev/video0 -vf hflip,fps=30 -f v4l2 -codec:v rawvideo -pix_fmt yuv420p /dev/video2") # /dev/video2, /dev/video1 iel değiştirilecek
+        
+    else:    
+        os.chdir("../")# python kodunun bulunduğu yerden çıkar (duruma göre bu komut tekrarlanabilir)
+        os.mkdir("v4l2") # yeni bir klasöe oluşturulur
+        cmd='git clone https://github.com/umlaeute/v4l2loopback.git /home/eren/v4l2'# dosyanın git adresi ve indirilmek istenilen yerin adresi değişkene atanır.
+        check_output(cmd,shell=True).decode()# dosya istenilen klasöre yazılır.
+        os.chdir("v4l2")# indirilen dosyanın bulunduğu klasöre girilir
+        os.system("make clean")# olası sorunlara karşı yapılan değişiklikler temizlenir
+        os.system("sudo modprobe -r v4l2loopback")# önceden varsa klonlanan kamera kaldırılır
+        os.system("make")# değişiklik yapmak için make komutu girilir ve bu kmut bize v4l2loopback.ko dosyasını oluşturur.
+        os.system("sudo modprobe v4l2loopback")
+        os.system("v4l2-ctl --list-devices")
+        os.mkdir("Drone kayıtları")
+        os.chdir("Drone kayıtları")
+        t2.start()
+        os.system("ffmpeg -re -i /dev/video0 -vf hflip,fps=30 -f v4l2 -codec:v rawvideo -pix_fmt yuv420p /dev/video2")
+    
+
+def recordcam():
+    print("kontrol")
+    sleep(5)
+    print("kontrol2")
+    
+    kamera1 = cv2.VideoCapture(2)
+    fourrcc = cv2.VideoWriter_fourcc(*'XVID')
+    videoKayit = cv2.VideoWriter((str(date)+'video.avi'), fourrcc, 25.0, (640, 480))
+    
+    
+    while (kamera1.isOpened()):
+        ret1, frame = kamera1.read()
+        if ret1 == True:
+            videoKayit.write(frame) # gelen görüntü üzerinde yapılan değişiklikler sonrasında kayıt edilir
+            cv2.imshow("target",frame)
+            if cv2.waitKey(1) &  0xFF == ord('x'):
+                break
+    kamera1.release()
+    videoKayit.release()
+    cv2.destroyAllWindows()
+
+t1 = threading.Thread(target=secondcam) # t1 değşkenine drone threadi eklenir 
+t2 = threading.Thread(target=recordcam) #t2 değişkenine text_kayıt threadi eklenir
+
+t1.start() #t1 değişkeni çalıştırılır
