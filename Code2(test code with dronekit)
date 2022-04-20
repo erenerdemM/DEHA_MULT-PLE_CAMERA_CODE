@@ -1,0 +1,83 @@
+import os# terminale komut göndermek için os kütüphanesi eklenir
+from subprocess import check_output # git'ten dosya indirmek için subprocess kütüphanesi indirilir
+import cv2 #Kamera için opencv kütüphanesi eklenir
+import threading # Kamera klonlama ve kamera kayıt işlemlerini aynı anda yapabilrmek için threading kütüphanesi eklenir
+import datetime # Kayıt dosyasının adını belirlemek için datetime kütüphanesi eklenir
+from dronekit import LocationGlobal, connect, VehicleMode,LocationGlobalRelative, Command# Dronekitte kullanılacak komutların kütüphaneleri eklenir
+arac = connect('127.0.0.1:14550',wait_ready=True)# drona bağlanılır
+
+# linux için geçerli bir komuttur !!!
+# kodu çalıştırmadan önce "sudo apt install v4l2loopback-dkms" komutu çalıştırılıp kayıt yapılacak, kayıt yapıldıktan sonra yeniden başlatılıcak ve başlatılırken enroll sekmesine girilecek.
+# Bu işlem yapıldıktan sonra kod çalışabilir hale gelicek.
+# Sistem şifresi var ise kod çalışma sırasında bir (duruma göre iki) kere şifrenin girilmesini isteyebilir !!!
+# Dosya yollarına dikkat edilecek !!!
+# Kodda duruma göre komut değişikliği yapılacak !!! 
+# Raspberry Pi için komut değişikliği yapılacaktır !!! 
+
+def secondcam():#2.kamera oluşturma fonksiyonu
+    if os.path.exists("/home/eren/DEHA_KAYIT/v4l2loopback.ko"): # Dosya yolunda v4l2loopback.ko dosyası var ise indirme işlemi ve dosya oluşturma işlemi yapılmayıp direkt kod çalışmaktadır.
+    # dosya yolu değiştirilecektir
+        os.chdir("../")# python kodunun bulunduğu yerden çıkar (duruma göre bu komut tekrarlanabilir)
+        os.chdir("DEHA_KAYIT")#DEHA_KAYIT dosyasına gider
+        os.system("make clean")#olası sorunlara karşı yapılan değişiklikler temizlenir
+        os.system("sudo modprobe -r v4l2loopback")#önceden varsa klonlanan kamera kaldırılır
+        os.system("make")# değişiklik yapmak için make komutu girilir ve bu komut v4l2loopback.ko dosyasını oluşturur
+        os.system("sudo modprobe v4l2loopback")# Ana kameranın kopyası oluşturulur
+        os.system("v4l2-ctl --list-devices")# kontrol amaç kullanıcıya kameralar gösterilir
+        os.chdir("Drone_kayitlari")# kayıt yapılacak dosyaya girilir
+        t2.start()# kayıt fonksiyonu çalıştırılır
+        os.system("ffmpeg -re -i /dev/video0 -vf hflip,fps=30 -f v4l2 -codec:v rawvideo -pix_fmt yuv420p /dev/video2") # Ana kameradan gelen görüntüyü kopyalanan kamera üzerinden birden fazla uygulamada kullanılmasını sağlayan komutlar
+        # /dev/video2, /dev/video1 ile değiştirilecek
+    else:    
+        os.chdir("../")# python kodunun bulunduğu yerden çıkar (duruma göre bu komut tekrarlanabilir)
+        os.mkdir("DEHA_KAYIT") # yeni bir klasöe oluşturulur
+        cmd='git clone https://github.com/erenerdemM/DEHA_MULT-PLE_CAMERA.git /home/eren/DEHA_KAYIT'# dosyanın git adresi ve indirilmek istenilen yerin adresi değişkene atanır.
+        check_output(cmd,shell=True).decode()# dosya istenilen klasöre yazılır.
+        os.chdir("DEHA_KAYIT")# indirilen dosyanın bulunduğu klasöre girilir
+        os.system("make clean")# olası sorunlara karşı yapılan değişiklikler temizlenir
+        os.system("sudo modprobe -r v4l2loopback")# önceden varsa klonlanan kamera kaldırılır
+        os.system("make")# değişiklik yapmak için make komutu girilir ve bu kmut bize v4l2loopback.ko dosyasını oluşturur.
+        os.system("sudo modprobe v4l2loopback")# Ana kameranın kopyası oluşturulur
+        os.system("v4l2-ctl --list-devices")# kontrol amaçlı kullanıcıya kameralar gösterilir
+        os.chdir("Drone_kayitlari")# Kayıt yapılacak dosyaya girilir
+        t2.start()# kayıt fonksiyonu başlatılır
+        os.system("ffmpeg -re -i /dev/video0 -vf hflip,fps=30 -f v4l2 -codec:v rawvideo -pix_fmt yuv420p /dev/video2")
+    
+
+def recordcam():# kayıt fonksiyonu
+    kamera1 = cv2.VideoCapture(2)# klon kameradan görüntü alınır
+    fourrcc = cv2.VideoWriter_fourcc(*'XVID')
+    videoKayit = cv2.VideoWriter((str(datetime.datetime.now())+'video.avi'), fourrcc, 25.0, (640, 480))# kayıt edilecek görüntünün adı-biçimi-fps-boyutu gibi değişkenler belirlenir
+    while ((kamera1.isOpened())&(arac.location.global_relative_frame.alt>=1)):#kamera açıksa ve drone 1 metrenin üzerinde ise kayıt başlar
+        ret1, frame = kamera1.read()# gelen görüntü okunur
+        if ret1 == True:# görüntü var ise görüntü işlenir
+            alt = "{:.2f}".format(arac.location.global_relative_frame.alt)# drone verileri virgülden sonra çok basamaklı olduğu için video kayıt yaparken ekrana bastırmakta zorlanılmaması için virgülden sonra sadece 2 basamak yazdırılır.
+            lat = "{:.2f}".format(arac.location.global_relative_frame.lat)
+            lon = "{:.2f}".format(arac.location.global_relative_frame.lon)# format komutu ile değerlerin formatı yeniden düzenlenir 
+            yaw = "{:.2f}".format(arac.attitude.yaw)# float değişken olduğu için .2f şeklinde yazdırılır
+            pitch = "{:.2f}".format(arac.attitude.pitch)
+            roll = "{:.2f}".format(arac.attitude.roll)
+            cv2.putText(frame,("Date"),(1,415),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# put text komutu ile görüntünün üzerine yazı yazdırılır.
+            cv2.putText(frame,(str(datetime.datetime.now())),(80,415),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# görüntü üzerine tarih yazdırılır.
+            cv2.putText(frame,("Alt"),(0,475),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# puttext komutunun parametreleri sırası ile (görüntü,yazdırılıcak yazı,konumu,yazı tipi,yazı kalınlığı,rengi,çizgi kalınlığı)
+            cv2.putText(frame,(str(alt)),(50,475),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# görüntü üzerine alt. değeri yazdırılır
+            cv2.putText(frame,("Lat"),(235,475),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)
+            cv2.putText(frame,(str(lat)),(290,475),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# görüntü üzerine lat. değeri yazdırılır
+            cv2.putText(frame,("Lon"),(485,475),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)
+            cv2.putText(frame,(str(lon)),(545,475),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# görüntü üzerine lon. değeri yazdırılır
+            cv2.putText(frame,("Yaw"),(0,445),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)
+            cv2.putText(frame,(str(yaw)),(70,445),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# görüntü üzerine yaw. değeri yazdırılır
+            cv2.putText(frame,("Pitch"),(235,445),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)
+            cv2.putText(frame,(str(pitch)),(320,445),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# görüntü üzerine pitch. değeri yazdırılır
+            cv2.putText(frame,("Roll"),(485,445),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)
+            cv2.putText(frame,(str(roll)),(545,445),cv2.FONT_HERSHEY_COMPLEX,1,(255,255,0),1)# görüntü üzerine roll. değeri yazdırılır
+            deha=cv2.imread("deha.png")# DEHA logosu imread komutu ile okunur ve deha değişkenine atanır
+            frame[0:90,0:90] = deha # ekranın sol üst köşesine (90-90 piksellik bir alana) logo yapıştırılır
+            videoKayit.write(frame) # gelen görüntü, üzerinde yapılan değişiklikler sonrasında kayıt edilir
+    kamera1.release()# kamera ve video kayıt değişkenleri sağlıklı bir şekilde kapatılır
+    videoKayit.release()
+
+t1 = threading.Thread(target=secondcam) # t1 değşkenine secondcam fonksiyonu atanır
+t2 = threading.Thread(target=recordcam) #t2 değişkenine recordcam fonksiyonu atanır
+
+t1.start() #t1 değişkeni çalıştırılır
