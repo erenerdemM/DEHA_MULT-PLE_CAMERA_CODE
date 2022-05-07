@@ -1,4 +1,3 @@
-from itertools import count
 import os# terminale komut göndermek için os kütüphanesi eklenir
 from subprocess import check_output # git'ten dosya indirmek için subprocess kütüphanesi indirilir
 import cv2 #Kamera için opencv kütüphanesi eklenir
