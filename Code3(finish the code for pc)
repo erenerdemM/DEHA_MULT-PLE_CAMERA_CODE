@@ -1,0 +1,131 @@
+from itertools import count
+import os# terminale komut göndermek için os kütüphanesi eklenir
+from subprocess import check_output # git'ten dosya indirmek için subprocess kütüphanesi indirilir
+import cv2 #Kamera için opencv kütüphanesi eklenir
+import threading # Kamera klonlama ve kamera kayıt işlemlerini aynı anda yapabilrmek için threading kütüphanesi eklenir
+import datetime # Kayıt dosyasının adını belirlemek için datetime kütüphanesi eklenir
+import time
+import shutil # Bir dosyayı bir yerden bir yere kopyalamak/ taşımak için kullanılan kütüphane eklenir
+from moviepy.editor import VideoFileClip, concatenate_videoclips # iki videoyu birleştiren kütüphane eklenir
+
+# linux için geçerli bir komuttur !!!
+# kodu çalıştırmadan önce "sudo apt install v4l2loopback-dkms" komutu çalıştırılıp kayıt yapılacak, kayıt yapıldıktan sonra yeniden başlatılıcak ve başlatılırken enroll sekmesine girilecek.
+# Bu işlem yapıldıktan sonra kod çalışabilir hale gelicek.
+# Sistem şifresi var ise kod çalışma sırasında bir (duruma göre iki) kere şifrenin girilmesini isteyebilir !!!
+# Dosya yollarına dikkat edilecek !!!
+# Kodda duruma göre komut değişikliği yapılacak !!! 
+# Raspberry Pi için komut değişikliği yapılacaktır !!! 
+
+def secondcam():#2.kamera oluşturma fonksiyonu
+    if os.path.exists("/home/eren/DEHA_KAYIT/v4l2loopback.ko"): # Dosya yolunda v4l2loopback.ko dosyası var ise indirme işlemi ve dosya oluşturma işlemi yapılmayıp direkt kod çalışmaktadır.
+    # dosya yolu değiştirilecektir
+        os.chdir("../")# python kodunun bulunduğu yerden çıkar (duruma göre bu komut tekrarlanabilir)
+        os.chdir("DEHA_KAYIT")#DEHA_KAYIT dosyasına gider
+        os.system("make clean")#olası sorunlara karşı yapılan değişiklikler temizlenir
+        os.system("sudo modprobe -r v4l2loopback")#önceden varsa klonlanan kamera kaldırılır
+        os.system("make")# değişiklik yapmak için make komutu girilir ve bu komut v4l2loopback.ko dosyasını oluşturur
+        os.system("sudo modprobe v4l2loopback")# Ana kameranın kopyası oluşturulur
+        os.system("v4l2-ctl --list-devices")# kontrol amaç kullanıcıya kameralar gösterilir
+        os.chdir("Drone_kayitlari")# kayıt yapılacak dosyaya girilir
+        if os.path.exists("/home/eren/DEHA_KAYIT/Drone_kayitlari/.kayitlar") is False:
+            os.mkdir(".kayitlar")# daha iyi dosya düzeni sağlanması için gizli dosya oluşturulur
+            shutil.move("deha.png","/home/eren/DEHA_KAYIT/Drone_kayitlari/.kayitlar")
+        os.chdir(".kayitlar")
+        t2.start()# kayıt fonksiyonu çalıştırılır
+        os.system("ffmpeg -re -i /dev/video0 -vf hflip,fps=30 -f v4l2 -codec:v rawvideo -pix_fmt yuv420p /dev/video2") # Ana kameradan gelen görüntüyü kopyalanan kamera üzerinden birden fazla uygulamada kullanılmasını sağlayan komutlar
+        # /dev/video2, /dev/video1 ile değiştirilecek
+    else:    
+        os.chdir("../")# python kodunun bulunduğu yerden çıkar (duruma göre bu komut tekrarlanabilir)
+        os.mkdir("DEHA_KAYIT") # yeni bir klasöe oluşturulur
+        cmd='git clone https://github.com/erenerdemM/DEHA_MULT-PLE_CAMERA-.git /home/eren/DEHA_KAYIT'# dosyanın git adresi ve indirilmek istenilen yerin adresi değişkene atanır.
+        check_output(cmd,shell=True).decode()# dosya istenilen klasöre yazılır.
+        os.chdir("DEHA_KAYIT")# indirilen dosyanın bulunduğu klasöre girilir
+        os.system("make clean")# olası sorunlara karşı yapılan değişiklikler temizlenir
+        os.system("sudo modprobe -r v4l2loopback")# önceden varsa klonlanan kamera kaldırılır
+        os.system("make")# değişiklik yapmak için make komutu girilir ve bu kmut bize v4l2loopback.ko dosyasını oluşturur.
+        os.system("sudo modprobe v4l2loopback")# Ana kameranın kopyası oluşturulur
+        os.system("v4l2-ctl --list-devices")# kontrol amaçlı kullanıcıya kameralar gösterilir
+        os.chdir("Drone_kayitlari")# Kayıt yapılacak dosyaya girilir
+        if os.path.exists("/home/eren/DEHA_KAYIT/Drone_kayitlari/.kayitlar") is False:
+            os.mkdir(".kayitlar")# daha iyi dosya düzeni sağlanması için gizli dosya oluşturulur
+            shutil.move("deha.png","/home/eren/DEHA_KAYIT/Drone_kayitlari/.kayitlar")
+        os.chdir(".kayitlar")
+        t2.start()# kayıt fonksiyonu başlatılır
+        os.system("ffmpeg -re -i /dev/video0 -vf hflip,fps=30 -f v4l2 -codec:v rawvideo -pix_fmt yuv420p /dev/video2")
+    
+
+def recordcam():# kayıt fonksiyonu
+    time.sleep(5)
+    
+    fourrcc = cv2.VideoWriter_fourcc('m','p','4','v')# tanımlama formatı oluşturulur
+    kamera1 = cv2.VideoCapture(2)# klon kameradan görüntü alınır
+    start = time.time()# her iki saniyede bir yeni video oluşturmak için kaydın başlangıç zamanı alınır
+    timer = time.time()# deneme için ikinci bir kayıt alınır
+    video_file_count = 1# kayıt edilen videoların isimlerini oluşturmak için bir counter oluşturulur
+    video_file = os.path.join(str(video_file_count) + ".mp4") # video_file değişkenine counter değişkeninin değeri ve .mp4 yazdırılır
+    video_writer = cv2.VideoWriter(video_file, fourrcc, 30, (640,480))# video kayıt komutunda dosya adı/video tanımlama formatı/fps/kare boyutu şeklide yazdılır
+    date=datetime.datetime.now()# Uçuş zamanını videonun başlığı yapabilmek için şuan ki zaman date değişkenine yazılır
+    date=str(date)# date değişkeni başka komutlarda kullanabilmek için str formatına dönüştürülür
+    print("kontrol")
+    while (kamera1.isOpened()):#kamera açıksa ve drone 1 metrenin üzerinde ise kayıt başlar
+        ret1, frame = kamera1.read()# gelen görüntü okunur
+        if ret1 == True:# görüntü var ise görüntü işlenir
+            deha=cv2.imread("deha.png")# DEHA logosu imread komutu ile okunur ve deha değişkenine atanır
+            frame[0:90,0:90] = deha # ekranın sol üst köşesine (90-90 piksellik bir alana) logo yapıştırılır
+            if time.time() - start > 2:# başladıktan 2 saniye sonra bir sonraki video kayıt dosyası oluşturulup kayıt edilir 
+                start = time.time()# başlangıç zamanı sıfırlanır
+                video_file_count += 1 # sonraki video kayıt için count arttılır
+                video_file = os.path.join(str(video_file_count) + ".mp4") # dosya adı değiştirilri
+                video_writer = cv2.VideoWriter(video_file, fourrcc, 30, (640,480))
+            video_writer.write(frame) # gelen görüntü, üzerinde yapılan değişiklikler sonrasında kayıt edilir
+            if time.time() - timer > 16:# deneme için 16 saniye görüntü alınır
+                t1.daemon
+                break
+    kamera1.release()# kamera ve video kayıt değişkenleri sağlıklı bir şekilde kapatılır
+    video_writer.release()
+    
+    video_counter = 1# kayıt edilen videoları birleştirmek için bir sayaç oluşturulur
+    while 1:# kaç adet video olduğunu hesaplamak için oluşturulan döngü
+        if os.path.exists(str(video_counter)+".mp4"):# videonun olup olmadığı sorgulanır
+            if os.path.exists(str(video_counter+1)+".mp4"):# eğer bir sonraki video var ise sayaç arttırılır
+                video_counter+=2
+            else:# yoksa sayaç bir başka değişkene aktarılır
+                counter=video_counter+1
+                break
+        else:# eğer video yoksa sayaç bir başka değişkene aktarılır
+            counter=video_counter
+            break
+        
+    video_counter=1 # sayaç başlangıç değerine döndürülür
+
+    while 1:# sıra ile videoları birleştiren döngü
+        if os.path.exists(str(video_counter)+".mp4"):# sayacın bulunduğu video ve bir sonraki video var ise birleştirilir 
+            if os.path.exists(str(video_counter+1)+".mp4"):
+                clip1= VideoFileClip(str(video_counter)+".mp4")
+                video_counter+=1
+                clip2= VideoFileClip(str(video_counter)+".mp4")
+                video_counter+=1
+                final_clip= concatenate_videoclips([clip1,clip2])
+                final_clip.write_videofile(str(counter)+".mp4")
+                counter+=1
+            else:# eğer sayacın bulunduğu video var fakat bir sonraki video yok ise bütün videolar birleştirilmiştir. Son videonun adı değiştirilip bir üst klasöre taşınır.
+                os.rename((str(counter-1)+".mp4"),(date+"Tarihli_ucus.mp4"))
+                shutil.move((date+"Tarihli_ucus.mp4"),"/home/eren/DEHA_KAYIT/Drone_kayitlari")
+                break
+            
+    video_counter=1
+    
+    while 1:# dosya boyutunu fazla büyütmemek için birleştirilen eski videolar silinir
+        if os.path.exists(str(video_counter)+".mp4"):
+            os.remove(str(video_counter)+".mp4")
+            video_counter+=1
+        else:
+            break
+        
+    print("finish")
+
+    
+t1 = threading.Thread(target=secondcam) # t1 değşkenine secondcam fonksiyonu atanır
+t2 = threading.Thread(target=recordcam) # t2 değişkenine recordcam fonksiyonu atanır
+
+t1.start() #t1 değişkeni çalıştırılır
